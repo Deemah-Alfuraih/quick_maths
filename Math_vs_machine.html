@@ -1,0 +1,1103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quick Maths vs. AI</title>
+
+<!-- Fonts: Press Start 2P (pixel titles and numbers) and VT323 (readable pixel text) -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
+
+<!-- Teachable Machine: TensorFlow.js + the image model library -->
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.3.1/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8.5/dist/teachablemachine-image.min.js"></script>
+
+<style>
+  :root{
+    --room:#5a5ca3;          /* the wall around the arcade screen */
+    --room-dark:#3b3d78;
+    --bezel:#2a2050;         /* the frame of the screen */
+    --screen:#3b2347;        /* the screen itself */
+    --screen-dark:#2a1834;
+    --panel:#24132c;         /* darker boxes on the screen */
+    --line:#6a4a7e;          /* borders */
+    --orange:#ff9a1f;
+    --orange-light:#ffd27a;
+    --orange-dark:#7a2e00;
+    --cream:#ffe8b8;
+    --muted:#bba7cb;
+    --green:#36d27a;
+    --red:#ff5a5a;
+    --px:"Press Start 2P", monospace;
+    --vt:"VT323", monospace;
+  }
+  *{box-sizing:border-box;}
+  html, body{margin:0; height:100%;}
+  body{
+    background:radial-gradient(ellipse at center, var(--room) 0%, var(--room-dark) 100%);
+    color:var(--cream); font-family:var(--vt); font-size:24px; line-height:1.2;
+    display:flex; align-items:center; justify-content:center; padding:16px; min-height:100vh;
+  }
+
+  /* ---------- The arcade screen ---------- */
+  .crt{
+    position:relative; width:min(1600px, 100%); height:calc(100vh - 32px); min-height:480px;
+    background:
+      linear-gradient(rgba(255,255,255,.06) 1px, transparent 1px) 0 0 / 90px 90px,
+      linear-gradient(90deg, rgba(255,255,255,.06) 1px, transparent 1px) 0 0 / 90px 90px,
+      radial-gradient(ellipse at center, var(--screen) 0%, var(--screen-dark) 100%);
+    border:14px solid var(--bezel); border-radius:44px;
+    box-shadow:0 0 0 4px #1b1438, 0 20px 60px rgba(0,0,0,.45), inset 0 0 80px rgba(0,0,0,.55);
+    overflow:hidden;
+  }
+  /* Glass shine in the top-left corner, and faint scanlines (decoration only) */
+  .crt::before{
+    content:""; position:absolute; inset:0; pointer-events:none; z-index:5;
+    background:radial-gradient(ellipse 45% 35% at 18% 12%, rgba(255,255,255,.10), transparent 70%);
+  }
+  .crt::after{
+    content:""; position:absolute; inset:0; pointer-events:none; z-index:5;
+    background:repeating-linear-gradient(rgba(0,0,0,.10) 0 2px, transparent 2px 4px);
+  }
+
+  /* Only one screen shows at a time */
+  .screen{display:none; position:absolute; inset:0; padding:22px 34px; overflow:auto;}
+  .screen.active{display:flex; flex-direction:column;}
+
+  /* ---------- Pixel text ---------- */
+  .px{font-family:var(--px); line-height:1.3;}
+  .glow{                                   /* orange gradient text with a dark pixel shadow */
+    font-family:var(--px);
+    background:linear-gradient(180deg, var(--orange-light) 0%, var(--orange) 55%, #e86a00 100%);
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+    filter:drop-shadow(4px 4px 0 var(--orange-dark));
+  }
+  /* Solid version for text that animates or changes (gradient text can vanish in Chrome when animated) */
+  .solid{font-family:var(--px); color:var(--orange-light); text-shadow:4px 4px 0 var(--orange-dark), 0 0 18px rgba(255,154,31,.35);}
+  .label{font-family:var(--px); font-size:14px; color:var(--cream); letter-spacing:1px;}
+  .value{font-family:var(--px); font-size:20px; color:var(--orange); margin-top:8px;}
+  .muted{color:var(--muted);}
+  .center{text-align:center;}
+  .blink{animation:blink 1s steps(1) infinite;}
+  @keyframes blink{50%{opacity:0;}}
+
+  /* ---------- Buttons ---------- */
+  button{font-family:var(--px); cursor:pointer;}
+  button:disabled{opacity:.35; cursor:not-allowed;}
+  /* Arcade menu choice: plain text, with a ◀ arrow when chosen */
+  .choice{
+    background:none; border:0; color:var(--cream); font-size:22px; padding:10px 18px; position:relative;
+  }
+  .choice::after{content:"◀"; color:var(--orange); margin-left:12px; visibility:hidden;}
+  .choice:hover:not(:disabled), .choice:focus-visible{color:var(--orange-light); outline:none;}
+  .choice:hover:not(:disabled)::after, .choice:focus-visible::after{visibility:visible;}
+  .choice.big{font-size:clamp(18px, min(2.4vw, 4.5vh), 34px);}
+  /* Boxed button for smaller actions */
+  .box{
+    background:var(--panel); color:var(--cream); border:3px solid var(--cream); font-size:12px;
+    padding:12px 14px; box-shadow:4px 4px 0 #120a17;
+  }
+  .box:hover:not(:disabled), .box:focus-visible{border-color:var(--orange); color:var(--orange-light); outline:none;}
+  .box:active:not(:disabled){transform:translate(3px,3px); box-shadow:1px 1px 0 #120a17;}
+  .box.hot{background:var(--orange); color:#2a1100; border-color:var(--orange-light);}
+  .box.hot:hover:not(:disabled){color:#2a1100; background:var(--orange-light);}
+  .box.on{border-color:var(--orange); color:var(--orange);}
+  input[type=text]{
+    font-family:var(--vt); font-size:24px; color:var(--cream); background:#1a0d21;
+    border:3px solid var(--line); padding:8px 12px; min-width:0;
+  }
+  input[type=text]:focus{outline:none; border-color:var(--orange);}
+  input::placeholder{color:#7d6790;}
+  .row{display:flex; gap:12px; flex-wrap:wrap; align-items:center;}
+
+  /* ---------- Pixel hearts ---------- */
+  .hearts{display:flex; gap:8px; align-items:center;}
+  .heart{width:34px; height:30px; display:block;}
+  .heart rect{fill:var(--orange);}
+  .heart.off rect{fill:#5d3f6e;}
+  .heart.now{animation:beat .8s ease-in-out infinite;}
+  @keyframes beat{50%{transform:scale(1.18);}}
+
+  /* ---------- Start screen ---------- */
+  .topbar{display:flex; justify-content:space-between; align-items:flex-start;}
+  .middle{margin:auto 0; padding-bottom:4vh;}   /* centres a screen's main content vertically */
+  #titleBig{font-size:clamp(28px, min(6vw, 10vh), 84px); margin:min(18px, 2vh) 0 6px;}
+  #titleVs{font-size:clamp(18px, min(3vw, 5vh), 42px);}
+  .loadBox{
+    width:min(860px, 100%); margin:min(22px, 2.5vh) auto 6px; padding:16px 18px; background:rgba(20,10,26,.55); border:3px solid var(--line);
+  }
+  .loadBox .row input{flex:1 1 300px;}
+  .status{margin-top:10px; min-height:1.2em; font-size:22px;}
+  .status.good{color:var(--green);}
+  .status.bad{color:var(--red);}
+  .warn{margin-top:10px; padding:10px 12px; border:3px solid var(--orange); color:var(--orange-light); font-size:21px;}
+  .warn ul{margin:4px 0 0; padding-left:22px;}
+  .warn[hidden]{display:none;}
+  .menu{display:flex; flex-direction:column; align-items:center; gap:4px; margin-top:16px;}
+  #menuHint{font-size:22px; min-height:1.2em;}
+
+  /* ---------- Ready screen ---------- */
+  .readyGrid{display:flex; gap:40px; justify-content:center; flex-wrap:wrap; margin:34px 0 10px;}
+  .readyGrid input{width:200px; text-transform:uppercase; font-size:30px; text-align:center;}
+  #askReady{font-size:clamp(18px, 2.4vw, 26px); color:var(--cream); margin-top:24px;}
+
+  /* ---------- Game screen ---------- */
+  .hud{display:grid; grid-template-columns:1fr auto 1fr; align-items:start; gap:16px; margin-bottom:10px;}
+  .hud .right{text-align:right;}
+  #turnText{font-family:var(--px); font-size:12px; color:var(--cream); text-align:center; margin-top:10px;}
+  .gameBody{display:grid; grid-template-columns:clamp(170px, 40vh, 400px) 1fr; gap:26px; flex:1; min-height:0;}
+
+  /* Left: camera and AI reading */
+  .camCol{display:flex; flex-direction:column; gap:8px;}
+  #camWrap{position:relative; padding:6px; border:3px solid var(--line); background:var(--panel);}
+  #camBox{
+    width:100%; aspect-ratio:1/1; background:#120a17; display:flex; align-items:center; justify-content:center;
+    text-align:center; color:var(--muted); font-size:22px; overflow:hidden;
+  }
+  #camBox canvas{width:100%; height:100%; display:block;}
+  #camWrap.flash #camBox{animation:flash .35s ease-out;}
+  @keyframes flash{0%{filter:brightness(2.4);} 100%{filter:none;}}
+  .readout{display:flex; gap:12px; align-items:center;}
+  #aiTile{
+    width:50px; height:50px; flex:none; display:grid; place-items:center; font-size:32px;
+    background:var(--panel); border:3px solid var(--orange);
+  }
+  #aiTile.small{font-size:14px; font-family:var(--px);}
+  #aiSees{font-size:22px;}
+  #sureWrap{height:14px; margin-top:4px; background:#1a0d21; border:2px solid var(--line);}
+  #sureBar{height:100%; width:0; background:#7d6790; transition:width .1s linear;}
+  #sureBar.ready{background:var(--orange);}
+  #snapBtn{font-size:15px; padding:11px; width:100%;}
+  #snapBtn kbd{font-family:var(--vt); font-size:20px; border:2px solid currentColor; padding:0 6px; margin-left:8px;}
+  #hint{font-size:20px; color:var(--muted); min-height:2.4em; line-height:1.1;}
+  #hint.warnHint{color:var(--red);}
+  #bars{display:grid; grid-template-columns:1fr 1fr; gap:2px 12px;}
+  .bar{display:grid; grid-template-columns:1fr 40px; gap:2px 6px; align-items:center; font-size:19px;}
+  .bar .name{grid-column:1 / -1; white-space:nowrap; overflow:hidden;}
+  .bar .track{height:10px; background:#1a0d21; border:2px solid var(--line);}
+  .bar .fill{height:100%; width:0; background:#7d6790;}
+  .bar.top .fill{background:var(--orange);}
+  .bar .pct{text-align:right;}
+  #quitBtn{position:absolute; right:30px; bottom:22px; font-size:10px; padding:8px 10px;}
+
+  /* Right: the question and the three answer cards */
+  .qCol{display:flex; flex-direction:column; min-width:0; container-type:inline-size;}  /* lets the question size itself to this column */
+  .qTop{display:flex; justify-content:space-between; gap:12px; font-family:var(--px); font-size:12px; color:var(--muted);}
+  #lockTag{color:var(--orange);}
+  /* The 10-second timer: a bar that drains, and the seconds left */
+  .timer{display:flex; align-items:center; gap:14px; margin-top:10px;}
+  #timerTrack{flex:1; height:18px; background:#1a0d21; border:3px solid var(--line);}
+  #timerFill{height:100%; width:100%; background:var(--orange);}
+  #timerFill.low{background:var(--red);}
+  #timerNum{font-family:var(--px); font-size:clamp(18px, 4vh, 34px); color:var(--orange-light); min-width:2.4em; text-align:right;}
+  #timerNum.low{color:var(--red);}
+  #question{font-size:clamp(18px, min(6cqw, 11vh), 96px); text-align:center; margin:min(28px, 3.5vh) 0 min(26px, 3vh); white-space:nowrap;}
+  #question.pop{animation:pop .3s steps(4);}
+  @keyframes pop{0%{transform:scale(.6); opacity:0;} 100%{transform:scale(1); opacity:1;}}
+  .cards{display:grid; grid-template-columns:repeat(3, 1fr); gap:clamp(12px, 2cqw, 28px); flex:1; min-height:0; max-height:48vh;}
+  .cards[hidden]{display:none;}
+  .card{
+    position:relative; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    background:var(--panel); border:3px solid var(--line); padding:10px 6px; text-align:center;
+    box-shadow:5px 5px 0 #120a17; transition:transform .1s;
+  }
+  .card .g{font-size:clamp(28px, 9vh, 100px); line-height:1.15;}
+  .card .n{font-family:var(--px); font-size:clamp(18px, min(5.5cqw, 7vh), 64px); color:var(--cream); margin:min(14px, 1.6vh) 0;}
+  .card .l{font-family:var(--px); font-size:10px; color:var(--muted);}
+  .card.seeing{border-color:var(--orange); transform:translateY(-6px); box-shadow:5px 11px 0 #120a17, 0 0 24px rgba(255,154,31,.45);}
+  .card.right{background:#145c38; border-color:var(--green);}
+  .card.picked{background:#6b1f24; border-color:var(--red);}
+  .card.dim{opacity:.35;}
+  /* Locked answer: highlighted, with a LOCKED tag, until the timer reveals the result */
+  .card.locked{border-color:var(--orange); background:#4a2a12; transform:translateY(-6px); box-shadow:5px 11px 0 #120a17;}
+  .card.locked::before{
+    content:"LOCKED"; position:absolute; top:-14px; left:50%; transform:translateX(-50%);
+    font-family:var(--px); font-size:10px; background:var(--orange); color:#2a1100; padding:5px 8px;
+  }
+  #result{margin-top:min(22px, 2.5vh); min-height:76px; text-align:center;}
+  #result .main{font-family:var(--px); font-size:clamp(14px, 1.8vw, 20px);}
+  #result.correct .main{color:var(--green);}
+  #result.wrong .main{color:var(--red);}
+  #result .sub{font-size:22px; color:var(--cream); margin-top:8px;}
+
+  /* ---------- Game over screen ---------- */
+  .overWrap{margin:auto; text-align:center; display:flex; flex-direction:column; align-items:center; gap:10px;}
+  #overTitle{font-size:clamp(24px, min(5vw, 9vh), 72px);}
+  #overSub{font-size:clamp(14px, 2vw, 22px); color:var(--cream);}
+  #overScore{font-size:clamp(50px, min(11vw, 17vh), 160px); margin:min(14px, 1.5vh) 0 4px;}
+  #overDetail{font-size:26px;}
+  #newHi{font-family:var(--px); font-size:16px; color:var(--green); min-height:1.2em;}
+
+  /* ---------- 3, 2, 1, GO overlay ---------- */
+  #overlay{position:absolute; inset:0; z-index:4; display:flex; align-items:center; justify-content:center; background:rgba(20,10,26,.78);}
+  #overlay[hidden]{display:none;}
+  #ovBig{font-size:clamp(90px, 18vw, 200px);}
+  #ovBig.pop{animation:pop .35s steps(4);}
+
+  /* ---------- Tall screens (big monitors, projectors): bigger small text ---------- */
+  @media (min-height:860px){
+    body{font-size:30px;}
+    .label{font-size:18px;}
+    .value{font-size:28px;}
+    .box{font-size:15px; padding:14px 18px;}
+    input[type=text]{font-size:30px;}
+    #turnText{font-size:15px;}
+    .heart{width:44px; height:39px;}
+    #aiSees, #hint, .bar, #menuHint, .status{font-size:26px;}
+    .qTop, .card .l{font-size:15px;}
+    #result .main{font-size:24px;}
+    #result .sub, #overDetail{font-size:32px;}
+    #newHi{font-size:20px;}
+  }
+
+  /* ---------- Short screens (small laptops): tighter spacing ---------- */
+  @media (max-height:720px){
+    .screen{padding:14px 26px;}
+    .hud{margin-bottom:4px;}
+    .value{margin-top:4px;}
+    .heart{width:26px; height:23px;}
+    #turnText{margin-top:4px;}
+    .camCol{gap:5px;}
+    #aiTile{width:40px; height:40px; font-size:24px;}
+    #snapBtn{padding:8px;}
+    #hint{min-height:2.2em; font-size:18px;}
+    .bar{font-size:17px;}
+    #result{margin-top:10px;}
+    .loadBox{padding:10px 14px;}
+    .menu{margin-top:6px;}
+  }
+
+  /* ---------- Small screens: stack the game ---------- */
+  @media (max-width:860px){
+    body{padding:8px;}
+    .crt{height:auto; min-height:calc(100vh - 16px); border-width:8px; border-radius:24px;}
+    .screen{position:relative; padding:18px 16px;}
+    .screen:not(.active){display:none;}
+    .gameBody{grid-template-columns:1fr;}
+    .qCol{order:-1;}                                   /* question first, camera underneath */
+    #camWrap{width:min(320px, 100%); margin:0 auto;}
+    #quitBtn{position:static; align-self:flex-end; margin-top:12px;}
+    .choice.big{font-size:20px;}
+  }
+</style>
+</head>
+<body>
+
+<div class="crt" id="crt">
+
+  <!-- ===================== START SCREEN ===================== -->
+  <section class="screen active" id="scrStart">
+    <div class="topbar">
+      <div><div class="label">HI-SCORE</div><div class="value" id="hiScoreStart">0</div></div>
+      <div class="hearts" aria-hidden="true" id="decoHearts"></div>
+    </div>
+
+    <div class="middle">
+    <div class="center">
+      <div class="glow" id="titleBig">QUICK MATHS</div>
+      <div class="glow" id="titleVs">VS. AI</div>
+    </div>
+
+    <div class="loadBox">
+      <div class="label" style="margin-bottom:10px">LOAD YOUR AI</div>
+      <div class="row">
+        <input type="text" id="modelUrl" placeholder="Paste your Teachable Machine link" autocomplete="off" spellcheck="false">
+        <button class="box hot" id="loadBtn">LOAD</button>
+        <button class="box" id="demoBtn">DEMO AI</button>
+      </div>
+      <div id="status" class="status"></div>
+      <div id="classWarn" class="warn" hidden></div>
+    </div>
+
+    <div class="menu">
+      <button class="choice big" id="practiceBtn" disabled>PRACTICE</button>
+      <button class="choice big" id="matchBtn" disabled>TOURNAMENT</button>
+      <div id="menuHint" class="muted">Load your AI first</div>
+    </div>
+    </div>
+  </section>
+
+  <!-- ===================== READY SCREEN (tournament) ===================== -->
+  <section class="screen" id="scrReady">
+    <div class="middle">
+    <div class="center"><div class="glow" style="font-size:clamp(24px,4vw,44px); margin-top:10px">TOURNAMENT</div></div>
+
+    <div class="readyGrid">
+      <div class="center">
+        <div class="label" style="margin-bottom:12px">MATCH CODE</div>
+        <input type="text" id="matchCode" maxlength="10" placeholder="QF1" autocomplete="off">
+        <div style="margin-top:10px"><button class="box" id="newCode">NEW CODE</button></div>
+      </div>
+      <div class="center">
+        <div class="label" style="margin-bottom:12px">PLAYERS</div>
+        <div class="row" id="playerPick">
+          <button class="box" data-n="3">3</button>
+          <button class="box on" data-n="4">4</button>
+          <button class="box" data-n="5">5</button>
+        </div>
+      </div>
+    </div>
+    <div class="center muted" style="font-size:22px">Both groups type the same code and get the same 10 questions. Click YES together on GO.</div>
+    <div id="readyMsg" class="center" style="color:var(--red); min-height:1.2em; margin-top:8px"></div>
+
+    <div class="center px" id="askReady">ARE YOU READY?</div>
+    <div class="row" style="justify-content:center; margin-top:10px; gap:40px">
+      <button class="choice big" id="yesBtn">YES</button>
+      <button class="choice big" id="noBtn">NO</button>
+    </div>
+    </div>
+  </section>
+
+  <!-- ===================== GAME SCREEN ===================== -->
+  <section class="screen" id="scrGame">
+    <div class="hud">
+      <div><div class="label">SCORE</div><div class="value" id="scoreValue">0</div></div>
+      <div>
+        <div class="hearts" id="hearts"></div>
+        <div id="turnText"></div>
+      </div>
+      <div class="right"><div class="label">QUESTION</div><div class="value" id="qCount">1/10</div></div>
+    </div>
+
+    <div class="gameBody">
+      <!-- Left: camera and what the AI sees -->
+      <div class="camCol">
+        <div id="camWrap"><div id="camBox">The camera starts when you load your AI.</div></div>
+        <div class="readout">
+          <div id="aiTile">?</div>
+          <div style="flex:1; min-width:0">
+            <div id="aiSees">AI sees: —</div>
+            <div id="sureWrap"><div id="sureBar"></div></div>
+          </div>
+        </div>
+        <button class="box hot" id="snapBtn" disabled>📸 SNAP<kbd>SPACE</kbd></button>
+        <div id="hint"></div>
+        <div id="bars"></div>
+        <button class="box" id="quitBtn">QUIT</button>
+      </div>
+
+      <!-- Right: question and answer cards -->
+      <div class="qCol">
+        <div class="qTop"><span id="qType">GET READY</span><span id="lockTag"></span></div>
+        <div class="timer"><div id="timerTrack"><div id="timerFill"></div></div><div id="timerNum">10</div></div>
+        <div class="solid" id="question">?</div>
+        <div class="cards" id="cards" hidden>
+          <div class="card" data-g="Rock"><div class="g">✊</div><div class="n"></div><div class="l">ROCK</div></div>
+          <div class="card" data-g="Paper"><div class="g">✋</div><div class="n"></div><div class="l">PAPER</div></div>
+          <div class="card" data-g="Scissors"><div class="g">✌️</div><div class="n"></div><div class="l">SCISSORS</div></div>
+        </div>
+        <div id="result"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== GAME OVER SCREEN ===================== -->
+  <section class="screen" id="scrOver">
+    <div class="overWrap">
+      <div class="glow" id="overTitle">ROUND OVER!</div>
+      <div class="px" id="overSub">HANDS DOWN!</div>
+      <div class="label" style="margin-top:18px">SCORE</div>
+      <div class="solid" id="overScore">0</div>
+      <div id="overDetail"></div>
+      <div id="newHi" class="blink"></div>
+      <div class="px" style="font-size:18px; margin-top:16px">PLAY AGAIN?</div>
+      <div class="row" style="justify-content:center; gap:40px">
+        <button class="choice big" id="againYes">YES</button>
+        <button class="choice big" id="againNo">NO</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3, 2, 1, GO -->
+  <div id="overlay" hidden><div class="solid" id="ovBig"></div></div>
+</div>
+
+<script>
+// =====================================================================
+//  SETTINGS: change these to tune the game
+// =====================================================================
+const DEMO_MODEL_URL   = "https://teachablemachine.withgoogle.com/models/gM0zm2K4R/";    // Your backup Rock/Paper/Scissors/Nothing model
+const QUESTIONS        = 10;    // Questions in one round (practice and tournament)
+const QUESTION_SECONDS = 10;    // Time to answer each question
+const REVEAL_SECONDS   = 2;     // How long the answer shows before the next question
+const SNAP_CONFIDENCE  = 0.5;   // On Snap, the AI must be at least this sure (0.5 = 50%) on average, or it asks to snap again
+const SNAP_WINDOW_MS   = 500;   // Snap averages the AI's readings over this many milliseconds
+
+// The model must have these 4 classes (capital letters don't matter)
+const GESTURES = ["Rock", "Paper", "Scissors"];          // answer cards, left to right
+const ICONS = { Rock:"✊", Paper:"✋", Scissors:"✌️" };
+const REQUIRED_CLASSES = [...GESTURES, "Nothing"];
+const STORAGE_KEY = "quickMathsModelUrl";
+const HISCORE_KEY = "quickMathsHiScore";
+
+// =====================================================================
+//  Page elements
+// =====================================================================
+const $ = id => document.getElementById(id);
+const el = {
+  screens: { start:$("scrStart"), ready:$("scrReady"), game:$("scrGame"), over:$("scrOver") },
+  hiScoreStart:$("hiScoreStart"), decoHearts:$("decoHearts"),
+  modelUrl:$("modelUrl"), loadBtn:$("loadBtn"), demoBtn:$("demoBtn"),
+  status:$("status"), classWarn:$("classWarn"),
+  practiceBtn:$("practiceBtn"), matchBtn:$("matchBtn"), menuHint:$("menuHint"),
+  matchCode:$("matchCode"), newCode:$("newCode"), playerPick:$("playerPick"), readyMsg:$("readyMsg"),
+  yesBtn:$("yesBtn"), noBtn:$("noBtn"),
+  scoreValue:$("scoreValue"), hearts:$("hearts"), turnText:$("turnText"), qCount:$("qCount"),
+  camWrap:$("camWrap"), camBox:$("camBox"), aiTile:$("aiTile"), aiSees:$("aiSees"),
+  sureBar:$("sureBar"), snapBtn:$("snapBtn"), hint:$("hint"), bars:$("bars"), quitBtn:$("quitBtn"),
+  qType:$("qType"), lockTag:$("lockTag"), timerFill:$("timerFill"), timerNum:$("timerNum"),
+  question:$("question"), cards:$("cards"), result:$("result"),
+  overTitle:$("overTitle"), overSub:$("overSub"), overScore:$("overScore"), overDetail:$("overDetail"), newHi:$("newHi"),
+  againYes:$("againYes"), againNo:$("againNo"),
+  overlay:$("overlay"), ovBig:$("ovBig"),
+};
+// The three answer cards, by gesture name
+const cardEls = {};
+el.cards.querySelectorAll(".card").forEach(card => cardEls[card.dataset.g] = card);
+
+// =====================================================================
+//  State
+// =====================================================================
+let model   = null;   // the loaded Teachable Machine model
+let webcam  = null;   // the Teachable Machine webcam helper
+let barEls  = {};     // class name -> its confidence bar elements
+let recent  = [];     // the AI's readings from the last half-second, used by Snap
+
+const game = {
+  mode: null,         // what is running: "practice" or "match"
+  lastMode: null,     // the mode of the round that just ended (for Play again)
+  phase: "idle",      // "idle", "countdown", "asking" (timer running), "reveal" or "over"
+  run: 0,             // increases whenever a round stops, so old timers know to do nothing
+  rng: null, qIndex: 0, question: null,
+  qStart: 0,          // when the current question appeared
+  locked: null,       // the answer locked in for this question: { gesture, confidence, seconds }
+  score: 0, totalSeconds: 0,   // totalSeconds = time taken to lock answers, used to break a tie
+  player: 1, players: 4,
+  tickId: null,
+};
+
+// Turn a class name from the model into "Rock", "Paper", "Scissors", "Nothing", or null if it's something else
+function canonical(name){
+  const n = String(name).trim().toLowerCase();
+  return REQUIRED_CLASSES.find(c => c.toLowerCase() === n) || null;
+}
+
+// Numbers with a proper minus sign
+function fmt(n){ return n < 0 ? "−" + (-n) : String(n); }
+
+// =====================================================================
+//  Screens and small helpers
+// =====================================================================
+function showScreen(name){
+  Object.entries(el.screens).forEach(([key, s]) => s.classList.toggle("active", key === name));
+}
+
+// A pixel heart drawn from little squares (an SVG), so no image file is needed
+const HEART_ROWS = [".XX.XX.", "XXXXXXX", "XXXXXXX", ".XXXXX.", "..XXX..", "...X..."];
+function heartSvg(cls){
+  let rects = "";
+  HEART_ROWS.forEach((row, y) => [...row].forEach((c, x) => { if(c === "X") rects += `<rect x="${x}" y="${y}" width="1.02" height="1.02"/>`; }));
+  return `<svg class="heart ${cls || ""}" viewBox="0 0 7 6" shape-rendering="crispEdges">${rects}</svg>`;
+}
+
+// Hearts in the game screen = the players. The current player's heart beats; the others are dim
+function renderHearts(){
+  if(game.mode !== "match"){ el.hearts.innerHTML = ""; el.turnText.textContent = "PRACTICE"; return; }
+  let html = "";
+  for(let i = 1; i <= game.players; i++) html += heartSvg(i === game.player ? "now" : "off");
+  el.hearts.innerHTML = html;
+  el.turnText.textContent = "PLAYER " + game.player;
+}
+
+function getHiScore(){ try{ return Number(localStorage.getItem(HISCORE_KEY)) || 0; }catch(e){ return 0; } }
+function setHiScore(n){ try{ localStorage.setItem(HISCORE_KEY, String(n)); }catch(e){ /* storage blocked: ignore */ } }
+
+function escapeHtml(s){ return s.replace(/[&<>"']/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch])); }
+
+// =====================================================================
+//  1. Loading a model
+// =====================================================================
+
+// Accept the link in the forms people usually paste and turn it into the folder link
+function normaliseUrl(raw){
+  let url = (raw || "").trim();
+  // A Teachable Machine link: keep only the model ID, so extra spaces, text or "#..." around it don't matter
+  const tm = url.match(/teachablemachine\.withgoogle\.com\/models\/([A-Za-z0-9_-]+)/);
+  if(tm) return `https://teachablemachine.withgoogle.com/models/${tm[1]}/`;
+  if(!/^https?:\/\//i.test(url)) return null;
+  url = url.replace(/(model|metadata)\.json$/i, "");
+  if(!url.endsWith("/")) url += "/";
+  return url;
+}
+
+function setStatus(text, kind){
+  el.status.textContent = text;
+  el.status.className = "status" + (kind ? " " + kind : "");
+}
+
+// isDemo = true for the DEMO AI button: its link is never shown, and never remembered
+async function loadModel(rawUrl, isDemo){
+  const url = normaliseUrl(rawUrl);
+  if(!url){ setStatus("Paste your model link first. It starts with https://", "bad"); return; }
+  if(typeof tmImage === "undefined"){
+    setStatus("The Teachable Machine library didn't load. Check the internet connection and reload the page.", "bad");
+    return;
+  }
+
+  setLoading(true);
+  setStatus("Loading your AI…");
+  let newModel;
+  try{
+    newModel = await tmImage.load(url + "model.json", url + "metadata.json");
+  }catch(err){
+    console.error(err);
+    setLoading(false);
+    // Say why, so the problem can be fixed: no internet, wrong link, or the page opened in a way that blocks downloads
+    const why = !navigator.onLine ? "This laptop is offline."
+      : location.protocol === "file:" ? "The page was opened as a file, which can block the download. Open it with Live Server (or a web link) instead."
+      : "Check the link and that you clicked Upload my model.";
+    const from = isDemo ? "the demo AI" : `the model from ${url} `;
+    setStatus(`Couldn't load ${from}. ${why} (Details: ${err && err.message ? err.message : err})`, "bad");
+    return;
+  }
+  model = newModel;
+
+  if(!isDemo){ try{ localStorage.setItem(STORAGE_KEY, url); }catch(e){ /* storage blocked: not a problem */ } }
+
+  const labels = model.getClassLabels();
+  checkClasses(labels);
+  buildBars(labels);
+
+  try{
+    await startWebcam();
+  }catch(err){
+    console.error(err);
+    setLoading(false);
+    setStatus("The AI loaded, but the camera didn't start. Open this page in Chrome, click the camera icon in the address bar, allow the camera, then click LOAD again.", "bad");
+    return;
+  }
+
+  setLoading(false);
+  el.practiceBtn.disabled = false;
+  el.matchBtn.disabled = false;
+  el.menuHint.textContent = "";
+  el.practiceBtn.focus();
+  setStatus(isDemo ? "Demo AI loaded ✓ Choose PRACTICE to check it." : "AI loaded ✓ Choose PRACTICE to check it.", "good");
+}
+
+function setLoading(on){
+  el.loadBtn.disabled = on; el.demoBtn.disabled = on;
+  el.loadBtn.textContent = on ? "LOADING…" : "LOAD";
+}
+
+// Warn if any class is missing or extra
+function checkClasses(labels){
+  const found   = labels.map(canonical);
+  const missing = REQUIRED_CLASSES.filter(c => !found.includes(c));
+  const extra   = labels.filter(l => !canonical(l));
+  if(!missing.length && !extra.length){ el.classWarn.hidden = true; return; }
+
+  const items = [];
+  missing.forEach(c => items.push(`Missing class “${c}”.` + (c === "Nothing" ? " The game will guess a gesture between answers." : " You can't pick this answer.")));
+  extra.forEach(n => items.push(`Class “${n.trim()}” isn't used by the game. The AI might pick it instead of a gesture.`));
+  const fingers = extra.some(n => /^[0-5]$/.test(n.trim()));
+  el.classWarn.innerHTML = "Check your class names. The game needs: Rock, Paper, Scissors, Nothing." +
+    (fingers ? " This looks like an old fingers model." : "") +
+    "<ul>" + items.map(t => "<li>" + escapeHtml(t) + "</li>").join("") + "</ul>";
+  el.classWarn.hidden = false;
+}
+
+// One confidence bar per class: Rock, Paper, Scissors, Nothing first, any extras after
+function buildBars(labels){
+  const order = l => { const i = REQUIRED_CLASSES.indexOf(canonical(l)); return i === -1 ? 99 : i; };
+  const sorted = [...labels].sort((a, b) => order(a) - order(b));
+  el.bars.innerHTML = "";
+  barEls = {};
+  sorted.forEach(label => {
+    const row = document.createElement("div");
+    row.className = "bar";
+    row.innerHTML = `<div class="name"></div><div class="track"><div class="fill"></div></div><div class="pct">0%</div>`;
+    const c = canonical(label);
+    row.querySelector(".name").textContent = (ICONS[c] ? ICONS[c] + " " : "") + label.trim();
+    el.bars.appendChild(row);
+    barEls[label] = { row, fill: row.querySelector(".fill"), pct: row.querySelector(".pct") };
+  });
+}
+
+// Start the webcam once, then keep predicting every frame
+async function startWebcam(){
+  if(webcam) return;
+  const cam = new tmImage.Webcam(300, 300, true); // width, height, flip (mirror image)
+  await cam.setup();
+  await cam.play();
+  webcam = cam;
+  el.camBox.innerHTML = "";
+  el.camBox.appendChild(webcam.canvas);
+  requestAnimationFrame(predictLoop);
+}
+
+async function predictLoop(){
+  webcam.update();
+  if(model){
+    try{
+      const predictions = await model.predict(webcam.canvas);
+      onPredictions(predictions);
+    }catch(err){ console.error(err); }
+  }
+  requestAnimationFrame(predictLoop);
+}
+
+// The gesture tile plus the "AI sees: Paper (92%)" line
+function setAiSees(tile, text, smallTile){
+  el.aiTile.textContent = tile;
+  el.aiTile.classList.toggle("small", !!smallTile);
+  el.aiSees.textContent = text;
+}
+
+// =====================================================================
+//  2. Reading the AI, and Snap
+// =====================================================================
+function onPredictions(predictions){
+  // Draw the confidence bars and find the AI's top guess
+  let top = predictions[0];
+  predictions.forEach(p => {
+    if(p.probability > top.probability) top = p;
+    const bar = barEls[p.className];
+    if(bar){
+      const pct = Math.round(p.probability * 100);
+      bar.fill.style.width = pct + "%";
+      bar.pct.textContent = pct + "%";
+    }
+  });
+  Object.entries(barEls).forEach(([name, bar]) => bar.row.classList.toggle("top", name === top.className));
+
+  const cls = canonical(top.className);              // "Rock", "Paper", "Scissors", "Nothing" or null
+  const gesture = GESTURES.includes(cls) ? cls : null;
+  const pct = Math.round(top.probability * 100);
+  setAiSees(gesture ? ICONS[gesture] : (cls === "Nothing" ? "–" : top.className.trim()),
+            `AI sees: ${cls || top.className.trim()} (${pct}%)`, !gesture && cls !== "Nothing");
+
+  // Remember the last half-second of readings, so a snap uses an average instead of one shaky frame
+  const now = performance.now();
+  const probs = {};
+  predictions.forEach(p => { const c = canonical(p.className); if(c) probs[c] = p.probability; });
+  recent.push({ t: now, probs });
+  while(recent.length && now - recent[0].t > SNAP_WINDOW_MS) recent.shift();
+
+  // Before an answer is locked: lift the card the AI is looking at, and show how sure it is
+  const open = game.phase === "asking" && !game.locked;
+  GESTURES.forEach(g => cardEls[g].classList.toggle("seeing", open && g === gesture && top.probability >= 0.5));
+  if(!open){ resetMeter(); return; }
+  el.sureBar.style.width = gesture ? pct + "%" : "0";
+  el.sureBar.classList.toggle("ready", !!gesture && top.probability >= SNAP_CONFIDENCE);
+  if(!el.hint.classList.contains("warnHint")){
+    el.hint.textContent = gesture
+      ? `Ready: ${ICONS[gesture]} ${gesture}. Press SPACE to lock it in.`
+      : "Show rock, paper or scissors, then press SPACE.";
+  }
+}
+
+function resetMeter(){
+  el.sureBar.style.width = "0";
+  el.sureBar.classList.remove("ready");
+}
+
+// The AI's average reading over the last half-second: { c: class, p: confidence } or null
+function averageReading(){
+  const avg = {};
+  recent.forEach(r => Object.entries(r.probs).forEach(([c, p]) => avg[c] = (avg[c] || 0) + p / recent.length));
+  let best = null;
+  Object.entries(avg).forEach(([c, p]) => { if(!best || p > best.p) best = { c, p }; });
+  return best;
+}
+
+// Snap: lock in the gesture the AI sees. The result is only shown when the timer ends
+function snap(){
+  if(game.phase !== "asking" || game.locked) return;
+
+  // Flash the camera like a photo
+  el.camWrap.classList.remove("flash"); void el.camWrap.offsetWidth; el.camWrap.classList.add("flash");
+
+  const best = averageReading();
+  if(best && GESTURES.includes(best.c) && best.p >= SNAP_CONFIDENCE){
+    lockAnswer(best.c, best.p);
+  }else if(!best || best.c === "Nothing"){
+    showHintWarning("The AI sees no gesture. Show rock, paper or scissors, then snap again.");
+  }else{
+    showHintWarning(`The AI isn't sure (${best.c} ${Math.round(best.p * 100)}%). Show the gesture clearly and snap again.`);
+  }
+}
+
+function lockAnswer(gesture, confidence){
+  const seconds = Math.min(QUESTION_SECONDS, (performance.now() - game.qStart) / 1000);
+  game.locked = { gesture, confidence, seconds };
+  el.snapBtn.disabled = true;
+  clearCards();
+  cardEls[gesture].classList.add("locked");
+  el.lockTag.textContent = `LOCKED IN ${seconds.toFixed(1)}s`;
+  el.hint.classList.remove("warnHint");
+  el.hint.textContent = `Locked: ${ICONS[gesture]} ${gesture}. Wait for the timer…`;
+  resetMeter();
+}
+
+// A hint in red that stays for 2 seconds
+function showHintWarning(text){
+  el.hint.textContent = text;
+  el.hint.classList.add("warnHint");
+  clearTimeout(showHintWarning.timer);
+  showHintWarning.timer = setTimeout(() => el.hint.classList.remove("warnHint"), 2000);
+}
+
+// Space = Snap
+document.addEventListener("keydown", e => {
+  if(e.target.tagName === "INPUT" || e.code !== "Space" || game.phase !== "asking") return;
+  e.preventDefault();          // stop Space from also pressing a focused button
+  if(!e.repeat) snap();
+});
+
+// =====================================================================
+//  3. Questions: one right answer and two believable wrong ones
+// =====================================================================
+
+// A seeded random number generator: the same match code always gives the same questions
+function makeRng(text){
+  let h = 2166136261;
+  for(const ch of text){ h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619); }
+  let a = h >>> 0;
+  return function(){
+    a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// The 10 questions get harder in this order
+const PLAN = ["add", "sub", "mul", "div", "mul", "div", "ops", "ops", "chal", "chal"];
+const TYPE_NAMES = { add:"ADDITION", sub:"SUBTRACTION", mul:"MULTIPLY", div:"DIVISION", ops:"ORDER OF OPS", chal:"CHALLENGE" };
+
+// Pick two wrong answers from a list of likely mistakes. The cards are shown smallest to largest,
+// so we first choose a random slot for the right answer (Rock, Paper or Scissors equally often),
+// then pick wrong answers below and above it to fit that slot
+function makeOptions(rng, answer, mistakes, allowNegative){
+  const ok = n => n !== answer && (allowNegative || n >= 0);
+  const pool = [...new Set(mistakes.filter(ok))];
+  for(let i = pool.length - 1; i > 0; i--){ const j = Math.floor(rng() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
+  const below = pool.filter(n => n < answer);
+  const above = pool.filter(n => n > answer);
+  // Backup: near misses, if there aren't enough likely mistakes on one side
+  for(let k = 1; below.length < 2 && k < 10; k++) if(ok(answer - k) && !below.includes(answer - k)) below.push(answer - k);
+  for(let k = 1; above.length < 2; k++) if(!above.includes(answer + k)) above.push(answer + k);
+
+  const slot = Math.min(Math.floor(rng() * 3), below.length);  // 0 = Rock, 1 = Paper, 2 = Scissors
+  const options = [...below.slice(0, slot), answer, ...above.slice(0, 2 - slot)].sort((a, b) => a - b);
+  return { options, correct: GESTURES[slot] };
+}
+
+function makeQuestion(rng, index){
+  const rand = (lo, hi) => lo + Math.floor(rng() * (hi - lo + 1));
+  const pick = list => list[Math.floor(rng() * list.length)];
+  const type = PLAN[index] || pick(PLAN);
+  let text, answer, mistakes, negative = false, a, b, c;
+
+  switch(type){
+    case "add":   // 47 + 38   (mistakes: forgot to carry, off by one)
+      a = rand(12, 89); b = rand(11, 79); answer = a + b;
+      text = `${a} + ${b}`; mistakes = [answer - 10, answer + 10, answer + 1, answer - 1];
+      break;
+    case "sub":   // 83 − 27
+      a = rand(40, 99); b = rand(11, a - 8); answer = a - b;
+      text = `${a} − ${b}`; mistakes = [answer + 10, answer - 10, answer + 2, answer - 2];
+      break;
+    case "mul":   // 7 × 8   (mistakes: the neighbouring times-table answers)
+      a = rand(3, 12); b = rand(3, 12); answer = a * b;
+      text = `${a} × ${b}`; mistakes = [answer + a, answer - a, answer + b, answer - b];
+      break;
+    case "div":   // 72 ÷ 8
+      b = rand(3, 12); answer = rand(3, 12);
+      text = `${answer * b} ÷ ${b}`; mistakes = [answer + 1, answer - 1, answer + 2, answer - 2];
+      break;
+    case "ops": { // 4 + 3 × 5   (mistake: working left to right)
+      a = rand(2, 9); b = rand(2, 9); c = rand(2, 9);
+      const pattern = rand(0, 2);
+      if(pattern === 0){ text = `${a} + ${b} × ${c}`; answer = a + b * c; mistakes = [(a + b) * c, answer + 1]; }
+      else if(pattern === 1){ text = `(${a} + ${b}) × ${c}`; answer = (a + b) * c; mistakes = [a + b * c, answer - c]; }
+      else { c = rand(2, Math.min(9, a * b - 1)); text = `${a} × ${b} − ${c}`; answer = a * b - c; mistakes = [a * (b - c), answer + 2, answer - 2]; }
+      break;
+    }
+    case "chal": { // 25% of 80,   12²,   −7 + 3
+      const pattern = rand(0, 2);
+      if(pattern === 0){
+        const p = pick([10, 20, 25, 50, 75]);
+        const step = { 10:10, 20:5, 25:4, 50:2, 75:4 }[p];
+        const n = step * rand(3, Math.floor(200 / step));
+        answer = p * n / 100; text = `${p}% of ${n}`;
+        mistakes = [answer * 2, n - answer, answer + 10];
+      }else if(pattern === 1){
+        a = rand(4, 15); answer = a * a; text = `${a}²`;
+        mistakes = [2 * a, answer + a, answer - a];
+      }else{
+        a = rand(3, 15); b = rand(2, 20); answer = b - a; text = `−${a} + ${b}`; negative = true;
+        mistakes = [-(a + b), a + b, -answer];
+      }
+      break;
+    }
+  }
+  const { options, correct } = makeOptions(rng, answer, mistakes, negative);
+  return { text: text + " = ?", answer, options, correct, type, label: TYPE_NAMES[type] };
+}
+
+// =====================================================================
+//  4. Running a round: 10 questions, 10 seconds each, then the answer is revealed
+// =====================================================================
+function clearCards(){
+  Object.values(cardEls).forEach(card => card.classList.remove("seeing", "locked", "right", "picked", "dim"));
+}
+
+function showQuestion(){
+  let q, tries = 0;
+  do { q = makeQuestion(game.rng, game.qIndex); tries++; }  // avoid the same question twice in a row
+  while(game.question && q.text === game.question.text && tries < 5);
+  game.question = q;
+  game.qIndex++;
+  game.locked = null;
+
+  el.qCount.textContent = `${game.qIndex}/${QUESTIONS}`;
+  el.qType.textContent = q.label;
+  el.lockTag.textContent = "";
+  el.question.textContent = q.text;
+  el.question.classList.remove("pop"); void el.question.offsetWidth; el.question.classList.add("pop");
+  GESTURES.forEach((g, i) => cardEls[g].querySelector(".n").textContent = fmt(q.options[i]));
+  clearCards();
+  el.cards.hidden = false;
+  el.result.className = ""; el.result.innerHTML = "";
+  el.hint.classList.remove("warnHint"); el.hint.textContent = "";
+  resetMeter();
+  renderHearts();
+
+  game.phase = "asking";
+  game.qStart = performance.now();
+  el.snapBtn.disabled = false;
+  if(document.activeElement && document.activeElement !== document.body) document.activeElement.blur(); // so Space can't press a button
+  clearInterval(game.tickId);
+  game.tickId = setInterval(tick, 100);
+  tick();
+}
+
+// Runs 10 times a second: drains the timer bar, and reveals the answer when time is up
+function tick(){
+  if(game.phase !== "asking") return;
+  const left = Math.max(0, QUESTION_SECONDS - (performance.now() - game.qStart) / 1000);
+  el.timerFill.style.width = (left / QUESTION_SECONDS * 100) + "%";
+  el.timerNum.textContent = Math.ceil(left);
+  const low = left <= 3;
+  el.timerFill.classList.toggle("low", low);
+  el.timerNum.classList.toggle("low", low);
+  if(left <= 0) reveal();
+}
+
+// Time's up for this question: use the locked answer, or read the hand now if nobody snapped
+function reveal(){
+  clearInterval(game.tickId);
+  game.phase = "reveal";
+  el.snapBtn.disabled = true;
+  resetMeter();
+
+  if(!game.locked){
+    const best = averageReading();
+    if(best && GESTURES.includes(best.c) && best.p >= SNAP_CONFIDENCE){
+      game.locked = { gesture: best.c, confidence: best.p, seconds: QUESTION_SECONDS };
+    }
+  }
+
+  const q = game.question;
+  const ans = game.locked;
+  const correct = !!ans && ans.gesture === q.correct;
+  if(correct) game.score++;
+  game.totalSeconds += ans ? ans.seconds : QUESTION_SECONDS;
+  el.scoreValue.textContent = game.score;
+
+  // Colour the cards: the right one green, a wrong pick red, the rest faded
+  clearCards();
+  GESTURES.forEach(g => {
+    if(g === q.correct) cardEls[g].classList.add("right");
+    else if(ans && g === ans.gesture) cardEls[g].classList.add("picked");
+    else cardEls[g].classList.add("dim");
+  });
+
+  const readLine = ans
+    ? `The AI read: ${ICONS[ans.gesture]} ${ans.gesture} (${Math.round(ans.confidence * 100)}%), which is ${fmt(q.options[GESTURES.indexOf(ans.gesture)])}`
+    : "The AI saw no gesture, so there was no answer";
+  el.result.className = correct ? "correct" : "wrong";
+  el.result.innerHTML =
+    `<div class="main">${correct ? "CORRECT!" : (ans ? "NOT QUITE!" : "NO ANSWER!")} ANSWER: ${ICONS[q.correct]} ${fmt(q.answer)}</div>` +
+    `<div class="sub">${readLine}</div>`;
+  el.hint.textContent = "";
+
+  const run = game.run;
+  setTimeout(() => {
+    if(run !== game.run) return;                      // the round was stopped meanwhile
+    if(game.qIndex >= QUESTIONS){ endRound(); return; }
+    if(game.mode === "match") game.player = game.player % game.players + 1;
+    showQuestion();
+  }, REVEAL_SECONDS * 1000);
+}
+
+// Stop whatever is running
+function stopGame(){
+  game.run++;
+  clearInterval(game.tickId);
+  game.phase = "idle";
+  game.mode = null;
+  resetMeter();
+  clearCards();
+  el.overlay.hidden = true;
+  el.snapBtn.disabled = true;
+}
+
+// Reset the game screen and start a round with a 3, 2, 1, GO countdown
+function startRound(mode, seed){
+  stopGame();
+  game.mode = mode;
+  game.rng = makeRng(seed);
+  game.qIndex = 0; game.question = null; game.locked = null;
+  game.score = 0; game.totalSeconds = 0; game.player = 1;
+  el.scoreValue.textContent = "0";
+  el.qCount.textContent = `1/${QUESTIONS}`;
+  el.timerFill.style.width = "100%"; el.timerFill.classList.remove("low");
+  el.timerNum.textContent = QUESTION_SECONDS; el.timerNum.classList.remove("low");
+  el.quitBtn.textContent = "QUIT";
+  renderHearts();
+  el.cards.hidden = true;
+  el.qType.textContent = mode === "match" ? "MATCH " + seed : "PRACTICE";
+  el.lockTag.textContent = "";
+  el.question.textContent = "GET READY";
+  el.result.className = ""; el.result.innerHTML = "";
+  el.hint.textContent = "";
+  showScreen("game");
+  countdown(showQuestion);
+}
+
+function startPractice(){
+  if(!model) return;
+  startRound("practice", String(Date.now()));
+}
+
+function openReady(){
+  if(!model) return;
+  stopGame();
+  el.readyMsg.textContent = "";
+  showScreen("ready");
+  el.matchCode.focus();
+  el.matchCode.select();
+}
+
+function startMatch(){
+  const code = el.matchCode.value.trim().toUpperCase();
+  el.matchCode.value = code;
+  if(!code){ el.readyMsg.textContent = "Type the match code from the projector first."; el.matchCode.focus(); return; }
+  game.players = Number(el.playerPick.querySelector(".on").dataset.n);
+  startRound("match", code);
+}
+
+// After the 10th question: show the score and the answer time (the tie-breaker)
+function endRound(){
+  const mode = game.mode;
+  const score = game.score, secs = game.totalSeconds;
+  stopGame();
+  game.phase = "over";
+  game.lastMode = mode;
+
+  el.overTitle.textContent = "ROUND OVER!";
+  el.overSub.textContent = "HANDS DOWN!";
+  el.overScore.textContent = `${score}/${QUESTIONS}`;
+  el.overDetail.textContent = `Answer time: ${secs.toFixed(1)} s` + (mode === "match" ? " (if scores tie, the faster group wins)" : "");
+  el.newHi.textContent = "";
+  if(mode === "match" && score > getHiScore()){   // only tournament matches count for the hi-score
+    setHiScore(score);
+    el.newHi.textContent = "NEW HI-SCORE!";
+  }
+  el.hiScoreStart.textContent = getHiScore();
+  showScreen("over");
+  el.againYes.focus();
+}
+
+// Quit: a practice stops straight away; a match needs a second click so it isn't quit by accident
+function quit(){
+  if(game.mode === "match" && el.quitBtn.textContent !== "SURE?"){
+    el.quitBtn.textContent = "SURE?";
+    setTimeout(() => { el.quitBtn.textContent = "QUIT"; }, 2500);
+    return;
+  }
+  stopGame();
+  showScreen("start");
+}
+
+// ---------- 3, 2, 1, GO ----------
+function countdown(then){
+  game.phase = "countdown";
+  const run = game.run;
+  const steps = ["3", "2", "1", "GO!"];
+  let i = 0;
+  el.overlay.hidden = false;
+  (function step(){
+    if(run !== game.run){ el.overlay.hidden = true; return; }   // stopped during the countdown
+    if(i < steps.length){
+      el.ovBig.textContent = steps[i];
+      el.ovBig.classList.remove("pop"); void el.ovBig.offsetWidth; el.ovBig.classList.add("pop");
+      i++;
+      setTimeout(step, i === steps.length ? 600 : 1000);
+    }else{
+      el.overlay.hidden = true;
+      then();
+    }
+  })();
+}
+
+// =====================================================================
+//  5. Wire up the buttons
+// =====================================================================
+el.loadBtn.onclick = () => loadModel(el.modelUrl.value);
+el.modelUrl.addEventListener("keydown", e => { if(e.key === "Enter") loadModel(el.modelUrl.value); });
+el.demoBtn.onclick = () => {
+  if(!DEMO_MODEL_URL){ setStatus("No demo AI set yet. Put its link in DEMO_MODEL_URL at the top of the script.", "bad"); return; }
+  loadModel(DEMO_MODEL_URL, true);
+};
+
+el.practiceBtn.onclick = startPractice;
+el.matchBtn.onclick = openReady;
+el.yesBtn.onclick = startMatch;
+el.noBtn.onclick = () => showScreen("start");
+el.matchCode.addEventListener("keydown", e => { if(e.key === "Enter") startMatch(); });
+el.newCode.onclick = () => {
+  const letters = "ABCDEFGHJKLMNPQRSTUVWXYZ"; // no I or O, so they aren't confused with 1 and 0
+  el.matchCode.value = Array.from({length:4}, () => letters[Math.floor(Math.random() * letters.length)]).join("");
+};
+el.playerPick.querySelectorAll("button").forEach(b => b.onclick = () => {
+  el.playerPick.querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b));
+});
+
+el.snapBtn.onclick = snap;
+el.quitBtn.onclick = quit;
+el.againYes.onclick = () => game.lastMode === "match" ? openReady() : startPractice();
+el.againNo.onclick = () => showScreen("start");
+
+// Start screen decoration: 5 hearts, like an arcade game's lives
+el.decoHearts.innerHTML = heartSvg().repeat(5);
+el.hiScoreStart.textContent = getHiScore();
+
+// Remember the last model link a group pasted on this laptop (never the demo link)
+try{
+  const saved = localStorage.getItem(STORAGE_KEY);
+  if(saved && saved !== normaliseUrl(DEMO_MODEL_URL)) el.modelUrl.value = saved;
+}catch(e){ /* storage blocked: start empty */ }
+
+// Clicking the link box selects all of it, so pasting a new link replaces the old one
+let justFocused = false;
+el.modelUrl.addEventListener("focus", () => { el.modelUrl.select(); justFocused = true; });
+el.modelUrl.addEventListener("mouseup", e => { if(justFocused){ e.preventDefault(); justFocused = false; } });  // keep the selection after the first click
+</script>
+</body>
+</html>

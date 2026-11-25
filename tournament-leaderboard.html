@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tournament: Rock, Paper, Scissors vs. AI</title>
+
+<!-- Same fonts as the slides: Fredoka (headings) and Nunito Sans (text) -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400..700&family=Nunito+Sans:wght@400..800&display=swap" rel="stylesheet">
+
+<style>
+  /* Colours from the presentation */
+  :root{
+    --cream:#FFF7E8;      /* page background */
+    --card:#FFFDF8;       /* cards */
+    --ink:#1F1A3D;        /* text, borders and shadows */
+    --ink-soft:#4A4568;
+    --coral:#FF6B4A;
+    --red:#C8402A;
+    --yellow:#FFC83D;
+    --blue:#5B7CFF;
+    --lime:#B8E986;
+    --lavender:#D9D4F0;
+    --head:"Fredoka", Arial, sans-serif;
+    --body:"Nunito Sans", Arial, sans-serif;
+    --shadow:6px 6px 0 var(--ink);
+  }
+  *{box-sizing:border-box;}
+  html, body{margin:0; min-height:100%;}
+  body{background:var(--cream); color:var(--ink); font-family:var(--body); font-size:20px; line-height:1.3; overflow-x:hidden;}
+  [hidden]{display:none !important;}
+
+  /* The three circles from the title slide (decoration only) */
+  .dots{position:absolute; width:300px; height:220px; pointer-events:none;}
+  .dots span{position:absolute; border-radius:50%;}
+  .dots .c1{width:150px; height:150px; background:var(--coral); left:0; top:0;}
+  .dots .c2{width:110px; height:110px; background:var(--yellow); left:132px; top:86px;}
+  .dots .c3{width:72px; height:72px; background:var(--blue); left:70px; top:156px;}
+
+  /* ---------- Shared bits ---------- */
+  .tag{display:inline-block; font-weight:800; font-size:14px; letter-spacing:2px; text-transform:uppercase;
+       background:var(--coral); color:var(--ink); padding:5px 16px; border-radius:999px;}
+  h1{font-family:var(--head); font-weight:600; line-height:1.05; margin:10px 0 0;}
+  h1 em{font-style:normal; color:var(--red);}
+  .card{background:var(--card); border:2px solid var(--ink); border-radius:24px; box-shadow:var(--shadow);}
+  button{
+    font-family:var(--body); font-weight:800; font-size:16px; cursor:pointer;
+    background:var(--card); color:var(--ink); border:2px solid var(--ink); border-radius:999px;
+    padding:10px 20px; box-shadow:3px 3px 0 var(--ink);
+  }
+  button:hover, button:focus-visible{background:var(--yellow); outline:none;}
+  button:active{transform:translate(2px,2px); box-shadow:1px 1px 0 var(--ink);}
+  button.big{font-family:var(--head); font-weight:600; font-size:26px; padding:14px 34px; background:var(--coral); box-shadow:5px 5px 0 var(--ink);}
+  button.big:hover{background:var(--yellow);}
+  input{
+    font-family:var(--body); font-size:22px; color:var(--ink); background:#fff;
+    border:2px solid var(--ink); border-radius:12px; padding:8px 12px; min-width:0;
+  }
+  input:focus{outline:3px solid var(--blue); outline-offset:1px;}
+
+  /* ---------- Screen 1: setup ---------- */
+  #setup{min-height:100vh; display:flex; align-items:center; justify-content:center; padding:40px 24px; position:relative;}
+  #setup .dots{top:30px; right:6%;}
+  .setupCard{position:relative; width:min(900px, 100%); padding:30px 34px 34px;}
+  .setupCard h1{font-size:clamp(36px, 4.5vw, 60px);}
+  .step{margin-top:28px;}
+  .step h2{font-family:var(--head); font-weight:600; font-size:28px; margin:0 0 12px; display:flex; align-items:center; gap:12px;}
+  .step h2 b{width:40px; height:40px; flex:none; display:grid; place-items:center; border-radius:50%; background:var(--yellow); border:2px solid var(--ink); font-weight:600;}
+  .counter{display:flex; align-items:center; gap:14px;}
+  .counter button{width:56px; height:56px; padding:0; font-size:30px; line-height:1;}
+  .counter input{width:110px; text-align:center; font-family:var(--head); font-weight:600; font-size:40px; padding:4px;}
+  .names{display:grid; grid-template-columns:repeat(auto-fill, minmax(240px, 1fr)); gap:12px 16px;}
+  .names label{display:flex; align-items:center; gap:10px;}
+  .names label span{font-family:var(--head); font-weight:600; font-size:18px; width:34px; height:34px; flex:none; display:grid; place-items:center; border-radius:50%; background:var(--lavender);}
+  .names input{flex:1;}
+  .startRow{margin-top:30px; display:flex; align-items:center; gap:18px; flex-wrap:wrap;}
+  .note{color:var(--ink-soft); font-size:17px;}
+
+  /* ---------- Screen 2: bracket ---------- */
+  #board{padding:26px 36px 40px; position:relative; min-height:100vh;}
+  #board .dots{top:-50px; right:330px;}
+  header{position:relative; display:flex; align-items:flex-end; justify-content:space-between; gap:20px; flex-wrap:wrap; margin-bottom:24px;}
+  header h1{font-size:clamp(34px, 4vw, 58px);}
+  .tools{display:flex; gap:10px; flex-wrap:wrap;}
+  .hint{color:var(--ink-soft); font-size:18px; margin:-8px 0 18px;}
+
+  .bracket{position:relative; display:flex; gap:64px; overflow-x:auto; padding:4px 10px 12px 0;}
+  .lines{position:absolute; left:0; top:0; pointer-events:none; z-index:0;}
+  .lines path{fill:none; stroke:var(--ink); stroke-width:3; stroke-linejoin:round; opacity:.3;}
+  .lines path.won{stroke:var(--coral); stroke-width:5; opacity:1;}
+  .round{flex:1 0 250px; max-width:380px; display:flex; flex-direction:column;}
+  .round h2{margin:0 0 16px; text-align:center;}
+  .round h2 span{display:inline-block; font-weight:800; font-size:14px; letter-spacing:2px; background:var(--coral); padding:5px 16px; border-radius:999px;}
+  .matches{flex:1; display:flex; flex-direction:column; justify-content:space-around; gap:20px;}
+
+  .match{position:relative; z-index:1; padding:12px 14px 14px; display:flex; flex-direction:column; gap:8px;}
+  .match.bye{background:var(--cream); border-style:dashed; box-shadow:none;}
+  .code{align-self:flex-start; font-family:var(--head); font-weight:600; font-size:17px; background:var(--yellow); border:2px solid var(--ink); border-radius:999px; padding:1px 12px;}
+  /* Each team is a button: click it to make it the winner */
+  .team{
+    display:flex; align-items:center; justify-content:space-between; gap:10px; width:100%; text-align:left;
+    font-family:var(--head); font-weight:600; font-size:24px; line-height:1.15;
+    background:#fff; border-radius:14px; padding:10px 14px; box-shadow:2px 2px 0 var(--ink); overflow-wrap:break-word;
+  }
+  .team .tick{font-size:22px; visibility:hidden;}
+  .team.win{background:var(--lime);}
+  .team.win .tick{visibility:visible;}
+  .team.lose{color:var(--ink-soft); text-decoration:line-through; opacity:.6; font-weight:500;}
+  .team.wait{color:#9A93B5; font-family:var(--body); font-style:italic; font-weight:600; font-size:18px; background:transparent; border-style:dashed; box-shadow:none; cursor:default;}
+  .team.wait:hover{background:transparent;}
+  .vs{text-align:center; font-weight:800; font-size:13px; letter-spacing:2px; color:var(--ink-soft); margin:-2px 0;}
+  .byeText{font-size:18px; color:var(--ink-soft);}
+  .byeText b{font-family:var(--head); font-weight:600; color:var(--ink); font-size:22px;}
+
+  /* Champion box at the end of the bracket */
+  .champCol{flex:0 0 260px; display:flex; flex-direction:column; justify-content:center;}
+  .champBox{text-align:center; padding:20px 18px; position:relative; z-index:1;}
+  .champBox .trophy{font-size:56px;}
+  .champBox .name{font-family:var(--head); font-weight:600; font-size:28px; margin-top:6px; overflow-wrap:break-word;}
+  .champBox.empty .name{color:#9A93B5;}
+  .champBox.done{background:var(--yellow); cursor:pointer;}
+
+  /* ---------- Screen 3: the winner ---------- */
+  #winner{position:fixed; inset:0; z-index:10; background:var(--cream); display:flex; align-items:center; justify-content:center; overflow:hidden; padding:24px;}
+  #winner .dots{top:40px; left:6%;}
+  #winner .dots.right{left:auto; right:6%; top:auto; bottom:40px; transform:rotate(180deg);}
+  .winCard{position:relative; z-index:2; text-align:center; max-width:1100px;}
+  .winCard .trophy{font-size:clamp(90px, 14vw, 180px); line-height:1; animation:bounce 1.6s ease-in-out infinite;}
+  @keyframes bounce{50%{transform:translateY(-14px) rotate(-4deg);}}
+  .winCard .tag{font-size:18px; margin-top:16px;}
+  .winCard h1{font-size:clamp(56px, 9vw, 140px); margin-top:14px; overflow-wrap:break-word;}
+  .winCard .runner{font-size:clamp(20px, 2vw, 28px); color:var(--ink-soft); margin-top:16px;}
+  .winCard .runner b{font-family:var(--head); font-weight:600; color:var(--ink);}
+  .winButtons{display:flex; gap:14px; justify-content:center; margin-top:34px; flex-wrap:wrap;}
+  /* Confetti: little squares in the slide colours falling down */
+  .confetti{position:absolute; top:-30px; width:14px; height:22px; border:2px solid var(--ink); border-radius:4px; z-index:1; animation:fall linear forwards;}
+  @keyframes fall{to{transform:translateY(115vh) rotate(720deg);}}
+
+  @media (max-width:900px){
+    #board{padding:18px 16px 30px;}
+    .dots{display:none;}
+    .bracket{flex-direction:column; gap:24px;}
+    .lines{display:none;}
+    .round, .champCol{max-width:none; flex:none;}
+  }
+</style>
+</head>
+<body>
+
+<!-- ===================== 1. SETUP: how many groups, and their names ===================== -->
+<section id="setup">
+  <div class="dots" aria-hidden="true"><span class="c1"></span><span class="c2"></span><span class="c3"></span></div>
+  <div class="card setupCard">
+    <span class="tag">Rock, Paper, Scissors vs. AI</span>
+    <h1>Tournament <em>setup</em></h1>
+
+    <div class="step">
+      <h2><b>1</b> How many groups?</h2>
+      <div class="counter">
+        <button id="fewer" aria-label="Fewer groups">−</button>
+        <input id="count" type="number" min="2" max="16" value="4" aria-label="Number of groups">
+        <button id="more" aria-label="More groups">+</button>
+      </div>
+    </div>
+
+    <div class="step">
+      <h2><b>2</b> Name the groups</h2>
+      <div class="names" id="names"></div>
+    </div>
+
+    <div class="startRow">
+      <button class="big" id="startBtn">Start tournament ▶</button>
+      <span class="note">Groups are paired at random.</span>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== 2. BRACKET: click the winner of each match ===================== -->
+<section id="board" hidden>
+  <div class="dots" aria-hidden="true"><span class="c1"></span><span class="c2"></span><span class="c3"></span></div>
+  <header>
+    <div>
+      <span class="tag">Rock, Paper, Scissors vs. AI</span>
+      <h1>Tournament <em>bracket</em></h1>
+    </div>
+    <div class="tools">
+      <button id="newBtn">New tournament</button>
+      <button id="fullBtn">Full screen</button>
+    </div>
+  </header>
+  <p class="hint">Click the group that wins each match. Clicked the wrong one? Click the other group to change it.</p>
+  <div class="bracket" id="bracket"></div>
+</section>
+
+<!-- ===================== 3. WINNER PAGE ===================== -->
+<section id="winner" hidden>
+  <div class="dots" aria-hidden="true"><span class="c1"></span><span class="c2"></span><span class="c3"></span></div>
+  <div class="dots right" aria-hidden="true"><span class="c1"></span><span class="c2"></span><span class="c3"></span></div>
+  <div class="winCard">
+    <div class="trophy">🏆</div>
+    <span class="tag">Champions</span>
+    <h1 id="winName">—</h1>
+    <div class="runner" id="runnerUp"></div>
+    <div class="winButtons">
+      <button id="backBtn">Back to bracket</button>
+      <button id="newBtn2">New tournament</button>
+    </div>
+  </div>
+</section>
+
+<script>
+// =====================================================================
+//  SETTINGS
+// =====================================================================
+const MIN_GROUPS = 2;
+const MAX_GROUPS = 16;
+const STORE_KEY  = "rpsTournamentBracket";
+const CONFETTI_COLOURS = ["#FF6B4A", "#FFC83D", "#5B7CFF", "#B8E986", "#D9D4F0"];
+
+// =====================================================================
+//  State
+// =====================================================================
+const BYE = -1;     // an empty slot in the bracket: the other group goes straight through
+// teams: the group names · order: the random draw (team numbers in bracket order)
+// winners: match id -> { a, b, w } (the two groups, and the one clicked as winner)
+let state = load() || { teams: defaultNames(4), order: null, winners: {} };
+
+function defaultNames(n){ return Array.from({length:n}, (_, i) => "Group " + (i + 1)); }
+function save(){ try{ localStorage.setItem(STORE_KEY, JSON.stringify(state)); }catch(e){} }
+function load(){
+  try{
+    const s = JSON.parse(localStorage.getItem(STORE_KEY));
+    if(s && Array.isArray(s.teams) && s.teams.length >= MIN_GROUPS) return { order:null, winners:{}, ...s };
+  }catch(e){}
+  return null;
+}
+
+const $ = id => document.getElementById(id);
+function escapeHtml(s){ return String(s).replace(/[&<>"']/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch])); }
+function teamName(i){ return (state.teams[i] || "").trim() || "Group " + (i + 1); }
+
+// =====================================================================
+//  1. Setup screen
+// =====================================================================
+function renderNames(){
+  $("count").value = state.teams.length;
+  $("names").innerHTML = state.teams.map((name, i) =>
+    `<label><span>${i + 1}</span><input type="text" maxlength="24" data-name="${i}" value="${escapeHtml(name)}" placeholder="Group ${i + 1}"></label>`).join("");
+}
+
+function setCount(n){
+  n = Math.max(MIN_GROUPS, Math.min(MAX_GROUPS, Math.round(Number(n)) || MIN_GROUPS));
+  const names = state.teams.slice(0, n);
+  while(names.length < n) names.push("Group " + (names.length + 1));
+  state.teams = names;
+  save(); renderNames();
+}
+
+$("fewer").onclick = () => setCount(state.teams.length - 1);
+$("more").onclick  = () => setCount(state.teams.length + 1);
+$("count").addEventListener("change", e => setCount(e.target.value));
+$("names").addEventListener("input", e => {
+  const i = e.target.dataset.name;
+  if(i !== undefined){ state.teams[i] = e.target.value; save(); }
+});
+
+// Start: shuffle the groups into a random bracket order
+$("startBtn").onclick = () => {
+  const order = state.teams.map((_, i) => i);
+  for(let i = order.length - 1; i > 0; i--){ const j = Math.floor(Math.random() * (i + 1)); [order[i], order[j]] = [order[j], order[i]]; }
+  state.order = order;
+  state.winners = {};
+  save();
+  showBoard();
+};
+
+// =====================================================================
+//  2. Building the bracket
+// =====================================================================
+
+// Standard seeding positions, so byes are spread out: 1 v 8, 4 v 5, 2 v 7, 3 v 6 ...
+function seedOrder(size){
+  let order = [1];
+  while(order.length < size){
+    const n = order.length * 2;
+    order = order.flatMap(s => [s, n + 1 - s]);
+  }
+  return order;
+}
+function roundName(matches){ return { 1:"FINAL", 2:"SEMI-FINALS", 4:"QUARTER-FINALS", 8:"ROUND OF 16" }[matches] || "ROUND"; }
+function codePrefix(matches){ return { 1:"FINAL", 2:"SF", 4:"QF", 8:"R" }[matches] || "M"; }
+
+// Every match, worked out from the random draw and the winners clicked so far
+function buildBracket(){
+  const n = state.order.length;
+  let size = 2; while(size < n) size *= 2;
+  let entrants = seedOrder(size).map(s => s <= n ? state.order[s - 1] : BYE);
+
+  const rounds = [];
+  while(entrants.length > 1){
+    const count = entrants.length / 2, ri = rounds.length;
+    const matches = [];
+    for(let i = 0; i < count; i++){
+      const a = entrants[2 * i], b = entrants[2 * i + 1];
+      const id = `r${ri}m${i}`;
+      let w = null;
+      if(a === BYE && b !== null) w = b;                     // a bye: the other group goes through
+      else if(b === BYE && a !== null) w = a;
+      else {
+        const saved = state.winners[id];                     // a click only counts if the same two groups are still there
+        if(saved && saved.a === a && saved.b === b) w = saved.w;
+      }
+      matches.push({ id, a, b, w, bye: a === BYE || b === BYE, code: codePrefix(count) + (count > 1 ? i + 1 : "") });
+    }
+    rounds.push({ name: roundName(count), matches });
+    entrants = matches.map(m => m.w);                        // winners move on (null = not decided yet)
+  }
+  return rounds;
+}
+
+// =====================================================================
+//  3. Drawing the bracket
+// =====================================================================
+function showBoard(){
+  $("setup").hidden = true;
+  $("board").hidden = false;
+  renderBoard();
+}
+
+function renderBoard(){
+  const rounds = buildBracket();
+  const final = rounds[rounds.length - 1].matches[0];
+
+  $("bracket").innerHTML = rounds.map(round =>
+    `<div class="round"><h2><span>${round.name}</span></h2><div class="matches">${round.matches.map(matchHtml).join("")}</div></div>`
+  ).join("") + `
+    <div class="champCol">
+      <div class="card champBox ${final.w !== null ? "done" : "empty"}" id="champBox" data-mid="champ" title="${final.w !== null ? "Show the winner page" : ""}">
+        <div class="trophy">🏆</div>
+        <div class="name">${final.w !== null ? escapeHtml(teamName(final.w)) : "???"}</div>
+      </div>
+    </div>`;
+  drawLines(rounds);
+}
+
+function matchHtml(m){
+  if(m.bye){
+    const who = m.a === BYE ? m.b : m.a;
+    return `<div class="card match bye" data-mid="${m.id}"><div class="byeText"><b>${escapeHtml(teamName(who))}</b><br>goes straight through</div></div>`;
+  }
+  const teamBtn = t => {
+    if(t === null) return `<button class="team wait" disabled>Winner of earlier match</button>`;
+    const cls = m.w === null ? "" : m.w === t ? "win" : "lose";
+    return `<button class="team ${cls}" data-match="${m.id}" data-team="${t}"><span>${escapeHtml(teamName(t))}</span><span class="tick">✔</span></button>`;
+  };
+  return `<div class="card match" data-mid="${m.id}">
+    <span class="code">Code: ${m.code}</span>
+    ${teamBtn(m.a)}<div class="vs">VS</div>${teamBtn(m.b)}
+  </div>`;
+}
+
+// Lines from each match to the match its winner plays next (coral once decided)
+function drawLines(rounds){
+  const br = $("bracket");
+  br.querySelector(".lines")?.remove();
+  if(br.offsetParent === null) return;                       // bracket not on screen
+  if(!rounds) rounds = buildBracket();
+  const box = br.getBoundingClientRect();
+  const pos = (id, side) => {
+    const el = br.querySelector(`[data-mid="${id}"]`);
+    if(!el) return null;
+    const r = el.getBoundingClientRect();
+    return { x:(side === "right" ? r.right : r.left) - box.left + br.scrollLeft, y:r.top + r.height / 2 - box.top + br.scrollTop };
+  };
+  let paths = "";
+  rounds.forEach((round, ri) => round.matches.forEach((m, i) => {
+    const last = ri === rounds.length - 1;
+    const a = pos(m.id, "right"), b = pos(last ? "champ" : `r${ri + 1}m${Math.floor(i / 2)}`, "left");
+    if(!a || !b) return;
+    const midX = (a.x + b.x) / 2;
+    paths += `<path class="${m.w !== null ? "won" : ""}" d="M${a.x} ${a.y} H${midX} V${b.y} H${b.x}"/>`;
+  }));
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("class", "lines");
+  svg.setAttribute("width", br.scrollWidth);
+  svg.setAttribute("height", br.scrollHeight);
+  svg.innerHTML = paths;
+  br.prepend(svg);
+}
+
+// Click a group to make it the winner of its match
+$("bracket").addEventListener("click", e => {
+  if(e.target.closest("#champBox.done")){ showWinner(); return; }
+  const btn = e.target.closest(".team[data-match]");
+  if(!btn) return;
+  const id = btn.dataset.match, team = Number(btn.dataset.team);
+  const m = buildBracket().flatMap(r => r.matches).find(x => x.id === id);
+  if(!m) return;
+  state.winners[id] = { a:m.a, b:m.b, w:team };
+  save();
+  renderBoard();
+  // The final was just decided: show the winner page
+  const rounds = buildBracket();
+  if(id === rounds[rounds.length - 1].matches[0].id) showWinner();
+});
+
+// =====================================================================
+//  4. Winner page
+// =====================================================================
+function showWinner(){
+  const final = buildBracket().pop().matches[0];
+  if(final.w === null) return;
+  const runner = final.w === final.a ? final.b : final.a;
+  $("winName").textContent = teamName(final.w);
+  $("runnerUp").innerHTML = runner !== null && runner !== BYE ? `Runners-up: <b>${escapeHtml(teamName(runner))}</b>` : "";
+  $("winner").hidden = false;
+  confetti();
+}
+
+function confetti(){
+  const box = $("winner");
+  box.querySelectorAll(".confetti").forEach(c => c.remove());
+  for(let i = 0; i < 90; i++){
+    const c = document.createElement("span");
+    c.className = "confetti";
+    c.style.left = Math.random() * 100 + "vw";
+    c.style.background = CONFETTI_COLOURS[i % CONFETTI_COLOURS.length];
+    c.style.animationDuration = 2.5 + Math.random() * 3 + "s";
+    c.style.animationDelay = Math.random() * 1.5 + "s";
+    box.appendChild(c);
+  }
+}
+
+$("backBtn").onclick = () => { $("winner").hidden = true; drawLines(); };
+
+// =====================================================================
+//  Buttons: new tournament, full screen
+// =====================================================================
+function newTournament(){
+  if(!confirm("Start a new tournament? This bracket will be cleared. Group names are kept.")) return;
+  state.order = null; state.winners = {};
+  save();
+  $("winner").hidden = true;
+  $("board").hidden = true;
+  $("setup").hidden = false;
+  renderNames();
+}
+$("newBtn").onclick = newTournament;
+$("newBtn2").onclick = newTournament;
+$("fullBtn").onclick = () => {
+  if(document.fullscreenElement) document.exitFullscreen();
+  else document.documentElement.requestFullscreen().catch(() => {});
+};
+
+window.addEventListener("resize", () => drawLines());
+if(document.fonts) document.fonts.ready.then(() => drawLines());   // redraw lines once the fonts have loaded
+
+// Open where we left off: the bracket if a tournament is running, else the setup
+renderNames();
+if(state.order && state.order.length === state.teams.length) showBoard();
+</script>
+</body>
+</html>
